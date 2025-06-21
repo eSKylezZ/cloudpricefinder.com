@@ -115,8 +115,20 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
           </svg>
           Columns
         </button>
-        <div class="text-sm text-gray-500" id="result-count">
-          {instances.length} instances
+        <div class="flex items-center space-x-4">
+          <div class="text-sm text-gray-500" id="result-count">
+            {instances.length} instances
+          </div>
+          <div class="flex items-center space-x-2">
+            <label for="page-size" class="text-sm text-gray-500">Show:</label>
+            <select id="page-size" class="text-sm border-gray-300 rounded">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="200">200</option>
+              <option value="500">500</option>
+              <option value="all">All</option>
+            </select>
+          </div>
         </div>
       </div>
     </div>
@@ -328,8 +340,8 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
         </tr>
       </thead>
       <tbody class="bg-white divide-y divide-gray-200" id="table-body">
-        {instances.map((instance) => (
-          <tr class="hover:bg-gray-50 instance-row" data-instance={JSON.stringify(instance)}>
+        {instances.slice(0, 100).map((instance) => (
+          <tr class="hover:bg-gray-50 instance-row content-visibility-auto" data-instance={JSON.stringify(instance)}>
             <td class="col-provider px-3 py-3 whitespace-nowrap">
               <span class={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getProviderBadgeColor(instance.provider)}`}>
                 {instance.provider.toUpperCase()}
@@ -436,6 +448,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
                           alt={location.country}
                           class="w-4 h-3 rounded-sm"
                           loading="lazy"
+                          decoding="async"
                         />
                         <span class="text-xs">{location.code}</span>
                       </span>
@@ -496,6 +509,22 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
     </table>
   </div>
 
+  <!-- Pagination Controls -->
+  <div id="pagination-controls" class="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
+    <div class="text-sm text-gray-500" id="pagination-info">
+      Showing 1-100 of {instances.length} instances
+    </div>
+    <div class="flex items-center space-x-2">
+      <button id="prev-page" class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+        Previous
+      </button>
+      <span class="text-sm text-gray-500" id="page-info">Page 1</span>
+      <button id="next-page" class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+        Next
+      </button>
+    </div>
+  </div>
+
   {instances.length === 0 && (
     <div class="text-center py-12">
       <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -516,7 +545,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
     const columnControlsBtn = document.getElementById('column-controls-btn');
     const columnControls = document.getElementById('column-controls');
     
-    let allInstances = Array.from(document.querySelectorAll('.instance-row'))
+    let allInstances = (window as any).fullInstanceData || Array.from(document.querySelectorAll('.instance-row'))
       .map(row => JSON.parse((row as HTMLElement).dataset.instance || '{}'));
     let currentPricingMode = 'ipv4_ipv6';
     let currentSortField = '';
@@ -528,6 +557,18 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
     let searchTerm = '';
     let isResizing = false;
     let resizeColumn: HTMLElement | null = null;
+    
+    // Pagination variables
+    let currentPage = 1;
+    let pageSize = 100;
+    let filteredInstances: any[] = [];
+    
+    // Pagination elements
+    const pageSizeSelect = document.getElementById('page-size') as HTMLSelectElement;
+    const prevPageBtn = document.getElementById('prev-page') as HTMLButtonElement;
+    const nextPageBtn = document.getElementById('next-page') as HTMLButtonElement;
+    const pageInfo = document.getElementById('page-info') as HTMLElement;
+    const paginationInfo = document.getElementById('pagination-info') as HTMLElement;
     
     // Handle currency changes from the currency selector
     window.addEventListener('currencyChanged', (event: Event) => {
@@ -608,6 +649,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
     const clearSearchBtn = document.getElementById('clear-search');
     
     if (searchInput) {
+      let searchTimeout: number;
       searchInput.addEventListener('input', (e) => {
         const target = e.target as HTMLInputElement;
         searchTerm = target.value.toLowerCase();
@@ -621,8 +663,11 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
           }
         }
         
-        // Apply search filter
-        applySearchFilter();
+        // Debounce search for better performance
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+          applySearchFilter();
+        }, 300);
       });
       
       // Handle clear search
@@ -774,10 +819,8 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
     }
     
     function sortInstances(field: string, direction: 'asc' | 'desc') {
-      const visibleRows = Array.from(document.querySelectorAll('.instance-row:not(.hidden)'));
-      const instances = visibleRows.map(row => JSON.parse((row as HTMLElement).dataset.instance || '{}'));
-      
-      instances.sort((a, b) => {
+      // Sort the full filtered dataset, not just visible rows
+      filteredInstances.sort((a, b) => {
         let aVal = a[field];
         let bVal = b[field];
         
@@ -820,8 +863,71 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
         }
       });
       
-      // Re-render sorted instances
-      renderInstances(instances);
+      // After sorting, re-render with pagination
+      renderPaginatedInstances();
+    }
+    
+    function normalizeValue(value: any, field?: string): any {
+      // Handle undefined, null, empty string, or dash
+      if (value === undefined || value === null || value === '' || value === '-') {
+        return null;
+      }
+      
+      // Handle arrays - use length or first element
+      if (Array.isArray(value)) {
+        return value.length > 0 ? value[0] : null;
+      }
+      
+      // Handle objects - try to extract meaningful value
+      if (typeof value === 'object') {
+        return null;
+      }
+      
+      // For numeric fields, ensure we're working with numbers
+      if (field && isNumericSortField(field)) {
+        if (typeof value === 'number') {
+          return value;
+        }
+        
+        if (typeof value === 'string') {
+          // Extract numbers from strings with units (e.g., "16 GiB", "100 GB", "€5.50")
+          const numericMatch = value.match(/^([\d.,]+)/);
+          if (numericMatch) {
+            const numericPart = numericMatch[1].replace(',', '');
+            const parsed = parseFloat(numericPart);
+            if (!isNaN(parsed)) {
+              return parsed;
+            }
+          }
+        }
+        
+        return null; // Invalid numeric value
+      }
+      
+      return value;
+    }
+    
+    function isNumericSortField(field: string): boolean {
+      const numericFields = [
+        'vCPU',
+        'memoryGiB', 
+        'diskSizeGB',
+        'priceUSD_hourly',
+        'priceUSD_monthly',
+        'priceEUR_hourly_net',
+        'priceEUR_monthly_net',
+        'network_speed',
+        'cpu_benchmark',
+        'hetzner_metadata.cpu_benchmark'
+      ];
+      
+      return numericFields.includes(field) || 
+             field.toLowerCase().includes('price') ||
+             field.toLowerCase().includes('cost') ||
+             field.toLowerCase().includes('cpu') ||
+             field.toLowerCase().includes('memory') ||
+             field.toLowerCase().includes('disk') ||
+             field.toLowerCase().includes('benchmark');
     }
     
     function normalizeValue(value: any, field?: string): any {
@@ -1155,11 +1261,15 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
       console.log(`Filtered result: ${filtered.length} instances`);
       console.log('Filtered examples:', filtered.slice(0, 5).map(i => ({instanceType: i.instanceType, type: i.type})));
       
-      renderInstances(filtered);
+      // Update filtered instances for pagination
+      filteredInstances = filtered;
+      currentPage = 1; // Reset to page 1 when filters change
       
-      // Apply search filter after rendering if there's an active search term
+      // Apply search filter after filtering if there's an active search term
       if (searchTerm !== '') {
-        applySearchFilter();
+        applyFiltersAndPagination();
+      } else {
+        renderPaginatedInstances();
       }
       
       // Update pricing display for region-specific pricing
@@ -1168,11 +1278,6 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
       } else {
         // Reset to default pricing when no single region is selected
         resetToDefaultPricing();
-      }
-      
-      // Update result count (will be overwritten by applySearchFilter if search is active)
-      if (searchTerm === '' && resultCount) {
-        resultCount.textContent = `${filtered.length} instances`;
       }
     }
     
@@ -1418,14 +1523,18 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
     function rebuildTable(instances: any[]) {
       if (!tableBody) return;
       
-      // Clear existing table body
-      tableBody.innerHTML = '';
+      // Use DocumentFragment for better performance
+      const fragment = document.createDocumentFragment();
       
       // Create new rows for all instances
       instances.forEach((instance) => {
         const row = createInstanceRow(instance);
-        tableBody.appendChild(row);
+        fragment.appendChild(row);
       });
+      
+      // Clear and append all at once
+      tableBody.innerHTML = '';
+      tableBody.appendChild(fragment);
     }
     
     function createInstanceRow(instance: any): HTMLElement {
@@ -1548,38 +1657,66 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
       return html;
     }
     
-    // Search filter function
-    function applySearchFilter() {
-      const rows = document.querySelectorAll('.instance-row');
-      let visibleCount = 0;
+    // Pagination functions
+    function updatePagination() {
+      if (!pageInfo || !paginationInfo) return;
       
-      // If no search term, show all rows and count them
-      if (searchTerm === '') {
-        rows.forEach(row => {
-          const rowElement = row as HTMLElement;
-          rowElement.style.display = '';
-          visibleCount++;
-        });
-      } else {
-        // First, reset all rows to visible, then apply search filter
-        rows.forEach(row => {
-          const rowElement = row as HTMLElement;
-          const instance = JSON.parse(rowElement.dataset.instance || '{}');
-          const matchesSearchTerm = matchesSearch(instance, searchTerm);
-          
-          if (matchesSearchTerm) {
-            rowElement.style.display = '';
-            visibleCount++;
-          } else {
-            rowElement.style.display = 'none';
-          }
-        });
-      }
+      const totalPages = Math.ceil(filteredInstances.length / pageSize);
+      const startIndex = (currentPage - 1) * pageSize + 1;
+      const endIndex = Math.min(currentPage * pageSize, filteredInstances.length);
+      
+      // Update page info
+      pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+      paginationInfo.textContent = pageSize === filteredInstances.length 
+        ? `Showing all ${filteredInstances.length} instances`
+        : `Showing ${startIndex}-${endIndex} of ${filteredInstances.length} instances`;
+      
+      // Update button states
+      if (prevPageBtn) prevPageBtn.disabled = currentPage === 1;
+      if (nextPageBtn) nextPageBtn.disabled = currentPage === totalPages || totalPages === 0;
       
       // Update result count
       if (resultCount) {
-        resultCount.textContent = `${visibleCount} instances`;
+        resultCount.textContent = `${filteredInstances.length} instances`;
       }
+    }
+    
+    function renderPaginatedInstances() {
+      if (pageSize === filteredInstances.length) {
+        // Show all instances
+        renderInstances(filteredInstances);
+      } else {
+        // Show paginated instances
+        const startIndex = (currentPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        const paginatedInstances = filteredInstances.slice(startIndex, endIndex);
+        renderInstances(paginatedInstances);
+      }
+      updatePagination();
+    }
+    
+    function applyFiltersAndPagination() {
+      // This will be called instead of the old applySearchFilter
+      // Apply search term to filtered instances
+      let searchFiltered = filteredInstances;
+      
+      if (searchTerm !== '') {
+        searchFiltered = filteredInstances.filter(instance => matchesSearch(instance, searchTerm));
+      }
+      
+      // Update the filtered instances for pagination
+      filteredInstances = searchFiltered;
+      
+      // Reset to page 1 when filters change
+      currentPage = 1;
+      
+      // Render paginated results
+      renderPaginatedInstances();
+    }
+    
+    // Legacy search filter function - now calls the new pagination system
+    function applySearchFilter() {
+      applyFiltersAndPagination();
     }
     
     function matchesSearch(instance: any, searchTerm: string): boolean {
@@ -1730,6 +1867,39 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
         }
       }
     });
+    
+    // Initialize pagination controls
+    if (pageSizeSelect) {
+      pageSizeSelect.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        pageSize = target.value === 'all' ? filteredInstances.length : parseInt(target.value);
+        currentPage = 1;
+        renderPaginatedInstances();
+      });
+    }
+    
+    if (prevPageBtn) {
+      prevPageBtn.addEventListener('click', () => {
+        if (currentPage > 1) {
+          currentPage--;
+          renderPaginatedInstances();
+        }
+      });
+    }
+    
+    if (nextPageBtn) {
+      nextPageBtn.addEventListener('click', () => {
+        const totalPages = Math.ceil(filteredInstances.length / pageSize);
+        if (currentPage < totalPages) {
+          currentPage++;
+          renderPaginatedInstances();
+        }
+      });
+    }
+    
+    // Initialize with all instances
+    filteredInstances = allInstances;
+    renderPaginatedInstances();
     
     // Initialize column resizing
     initializeColumnResizing();
