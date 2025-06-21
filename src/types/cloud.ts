@@ -104,6 +104,15 @@ export interface CloudInstance {
   unit?: string;                   // Storage pricing units
   location?: string;               // Single location services
   
+  // Technical specifications
+  architecture?: string;
+  network_speed?: string;
+  datacenter?: string;
+  
+  // Legacy pricing (European pricing)
+  priceEUR_hourly_net?: number;
+  priceEUR_monthly_net?: number;
+  
   // Metadata
   deprecated?: boolean;
   source: string;
@@ -117,6 +126,8 @@ export interface CloudInstance {
     serviceCategory: string;
     auctionServer?: boolean;
     robotServerId?: string;
+    datacenter?: string;
+    cpu_benchmark?: string | number;
   };
   
   // Provider-specific data

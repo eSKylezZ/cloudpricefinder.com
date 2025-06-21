@@ -1,14 +1,14 @@
 {
   "totalInstances": 1346,
   "providersCount": 2,
-  "lastUpdated": "2025-06-20T22:50:02.467779",
+  "lastUpdated": "2025-06-21T20:07:47.196335",
   "priceRange": {
     "min": 0.006473,
     "max": 5.1
   },
   "byProvider": {
-    "oci": 26,
-    "hetzner": 1320
+    "hetzner": 1320,
+    "oci": 26
   },
   "byType": {
     "cloud-server": 45,
@@ -18,29 +18,29 @@
   },
   "errors": {},
   "providerFiles": {
-    "oci": {
-      "file": "providers/oci.json",
-      "count": 26,
-      "lastUpdated": "2025-06-20T22:50:02.471449"
-    },
     "hetzner": {
       "file": "providers/hetzner.json",
       "count": 1320,
-      "lastUpdated": "2025-06-20T22:50:02.525395"
+      "lastUpdated": "2025-06-21T20:07:47.251174"
+    },
+    "oci": {
+      "file": "providers/oci.json",
+      "count": 26,
+      "lastUpdated": "2025-06-21T20:07:47.254644"
     }
   },
   "dataStructure": {
     "combined": "data/all_instances.json",
     "providers": {
-      "oci": {
-        "file": "providers/oci.json",
-        "count": 26,
-        "lastUpdated": "2025-06-20T22:50:02.471449"
-      },
       "hetzner": {
         "file": "providers/hetzner.json",
         "count": 1320,
-        "lastUpdated": "2025-06-20T22:50:02.525395"
+        "lastUpdated": "2025-06-21T20:07:47.251174"
+      },
+      "oci": {
+        "file": "providers/oci.json",
+        "count": 26,
+        "lastUpdated": "2025-06-21T20:07:47.254644"
       }
     },
     "description": "Data available in both combined format and individual provider files"
