@@ -428,7 +428,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
             <td class="col-regions px-3 py-3 whitespace-nowrap text-sm text-gray-500">
               <div class="flex flex-wrap gap-1 max-w-32 relative regions-container" data-regions={JSON.stringify(instance.locationDetails || [])}>
                 {instance.locationDetails ? (
-                  instance.locationDetails.slice(0, 3).map((location, index) => (
+                  instance.locationDetails.slice(0, 3).map((location) => (
                     <div class="relative group">
                       <span class="inline-flex items-center space-x-1 cursor-pointer hover:bg-gray-100 px-1 py-0.5 rounded">
                         <img 
@@ -522,7 +522,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
     let currentSortField = '';
     let currentSortDirection: 'asc' | 'desc' = 'asc';
     let activeFilters: any = {};
-    let popupTimeouts: Map<string, number> = new Map();
+    let popupTimeouts: Map<string, NodeJS.Timeout> = new Map();
     let currentCurrency = localStorage.getItem('selectedCurrency') || 'USD';
     let exchangeRates: { [key: string]: number } = { 'USD': 1.0 };
     let searchTerm = '';
@@ -696,7 +696,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
         const popup = trigger.querySelector('.all-regions-popup');
         if (!popup) return;
         
-        let showTimeout: number, hideTimeout: number;
+        let showTimeout: NodeJS.Timeout, hideTimeout: NodeJS.Timeout;
         
         trigger.addEventListener('mouseenter', () => {
           clearTimeout(hideTimeout);
@@ -788,31 +788,103 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
           bVal = keys.reduce((obj, key) => obj?.[key], b);
         }
         
-        // Handle null/undefined values
-        if (aVal == null && bVal == null) return 0;
-        if (aVal == null) return direction === 'asc' ? 1 : -1;
-        if (bVal == null) return direction === 'asc' ? -1 : 1;
+        // Normalize values for consistent comparison
+        aVal = normalizeValue(aVal, field);
+        bVal = normalizeValue(bVal, field);
         
-        // Type-aware comparison
-        if (typeof aVal === 'string' && typeof bVal === 'string') {
-          const comparison = aVal.localeCompare(bVal);
+        // Handle null/undefined values - always put them at the end regardless of direction
+        if (aVal === null && bVal === null) return 0;
+        if (aVal === null) return 1;  // Always put nulls at end
+        if (bVal === null) return -1; // Always put nulls at end
+        
+        // Determine if we're dealing with numeric data
+        const isNumericField = isNumericSortField(field);
+        
+        if (isNumericField) {
+          // Force numeric comparison for known numeric fields
+          const aNum = parseFloat(String(aVal));
+          const bNum = parseFloat(String(bVal));
+          
+          if (isNaN(aNum) && isNaN(bNum)) return 0;
+          if (isNaN(aNum)) return 1;  // Put invalid numbers at end
+          if (isNaN(bNum)) return -1; // Put invalid numbers at end
+          
+          const comparison = aNum - bNum;
+          return direction === 'asc' ? comparison : -comparison;
+        } else {
+          // String comparison for non-numeric fields
+          const aStr = String(aVal).toLowerCase();
+          const bStr = String(bVal).toLowerCase();
+          const comparison = aStr.localeCompare(bStr, undefined, { numeric: true });
           return direction === 'asc' ? comparison : -comparison;
         }
-        
-        // Numeric comparison
-        const aNum = Number(aVal);
-        const bNum = Number(bVal);
-        if (!isNaN(aNum) && !isNaN(bNum)) {
-          return direction === 'asc' ? aNum - bNum : bNum - aNum;
-        }
-        
-        // Fallback string comparison
-        const comparison = String(aVal).localeCompare(String(bVal));
-        return direction === 'asc' ? comparison : -comparison;
       });
       
       // Re-render sorted instances
       renderInstances(instances);
+    }
+    
+    function normalizeValue(value: any, field?: string): any {
+      // Handle undefined, null, empty string, or dash
+      if (value === undefined || value === null || value === '' || value === '-') {
+        return null;
+      }
+      
+      // Handle arrays - use length or first element
+      if (Array.isArray(value)) {
+        return value.length > 0 ? value[0] : null;
+      }
+      
+      // Handle objects - try to extract meaningful value
+      if (typeof value === 'object') {
+        return null;
+      }
+      
+      // For numeric fields, ensure we're working with numbers
+      if (field && isNumericSortField(field)) {
+        if (typeof value === 'number') {
+          return value;
+        }
+        
+        if (typeof value === 'string') {
+          // Extract numbers from strings with units (e.g., "16 GiB", "100 GB", "€5.50")
+          const numericMatch = value.match(/^([\d.,]+)/);
+          if (numericMatch) {
+            const numericPart = numericMatch[1].replace(',', '');
+            const parsed = parseFloat(numericPart);
+            if (!isNaN(parsed)) {
+              return parsed;
+            }
+          }
+        }
+        
+        return null; // Invalid numeric value
+      }
+      
+      return value;
+    }
+    
+    function isNumericSortField(field: string): boolean {
+      const numericFields = [
+        'vCPU',
+        'memoryGiB', 
+        'diskSizeGB',
+        'priceUSD_hourly',
+        'priceUSD_monthly',
+        'priceEUR_hourly_net',
+        'priceEUR_monthly_net',
+        'network_speed',
+        'cpu_benchmark',
+        'hetzner_metadata.cpu_benchmark'
+      ];
+      
+      return numericFields.includes(field) || 
+             field.toLowerCase().includes('price') ||
+             field.toLowerCase().includes('cost') ||
+             field.toLowerCase().includes('cpu') ||
+             field.toLowerCase().includes('memory') ||
+             field.toLowerCase().includes('disk') ||
+             field.toLowerCase().includes('benchmark');
     }
     
     function updateRegionDisplayPriority(filteredRegions: string[]) {
@@ -929,8 +1001,8 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
             // First, find matching locations in locationDetails based on filter criteria
             const matchingLocations = [];
             if (instance.locationDetails && Array.isArray(instance.locationDetails)) {
-              matchingLocations.push(...instance.locationDetails.filter(location => 
-                filters.regions.some(filterRegion => 
+              matchingLocations.push(...instance.locationDetails.filter((location: any) => 
+                filters.regions.some((filterRegion: string) => 
                   filterRegion === location.country || 
                   filterRegion === location.code || 
                   filterRegion === location.region ||
@@ -943,15 +1015,15 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
             
             // CRITICAL: Only show instance if it has regional pricing for the matching location
             instanceHasSelectedRegion = matchingLocations.length > 0 && 
-              matchingLocations.some(location =>
-                instance.regionalPricing.some(pricing => pricing.location === location.code)
+              matchingLocations.some((location: any) =>
+                instance.regionalPricing.some((pricing: any) => pricing.location === location.code)
               );
           }
           // Fallback to legacy regions field only if no regionalPricing exists
           else {
             if (instance.locationDetails && Array.isArray(instance.locationDetails)) {
-              instanceHasSelectedRegion = instance.locationDetails.some(location => 
-                filters.regions.some(filterRegion => 
+              instanceHasSelectedRegion = instance.locationDetails.some((location: any) => 
+                filters.regions.some((filterRegion: string) => 
                   filterRegion === location.country || 
                   filterRegion === location.code || 
                   filterRegion === location.region ||
@@ -962,8 +1034,8 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
               );
             }
             else if (instance.regions && Array.isArray(instance.regions)) {
-              instanceHasSelectedRegion = instance.regions.some(region => 
-                filters.regions.some(filterRegion =>
+              instanceHasSelectedRegion = instance.regions.some((region: string) => 
+                filters.regions.some((filterRegion: string) =>
                   filterRegion === region ||
                   filterRegion.toLowerCase() === region.toLowerCase()
                 )
@@ -996,7 +1068,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
           // Handle object format (new networkOptions structure)
           if (instanceNetworkOption && typeof instanceNetworkOption === 'object') {
             // Check if any of the filtered network options are available in the object
-            const hasMatchingNetworkOption = filters.networkOptions.some(filterOption => 
+            const hasMatchingNetworkOption = filters.networkOptions.some((filterOption: string) => 
               instanceNetworkOption[filterOption] && instanceNetworkOption[filterOption].available
             );
             
@@ -1030,7 +1102,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
           const selectedRegion = filters.regions[0];
           
           // Find matching location
-          const matchingLocation = instance.locationDetails.find(location => 
+          const matchingLocation = instance.locationDetails.find((location: any) => 
             selectedRegion === location.country || 
             selectedRegion === location.code || 
             selectedRegion.toLowerCase() === location.country.toLowerCase() ||
@@ -1039,7 +1111,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
           
           // Find corresponding regional pricing
           if (matchingLocation) {
-            const regionalPrice = instance.regionalPricing.find(pricing => 
+            const regionalPrice = instance.regionalPricing.find((pricing: any) => 
               pricing.location === matchingLocation.code
             );
             if (regionalPrice && regionalPrice.hourly_net) {
@@ -1111,7 +1183,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
         if (!instance.locationDetails || !instance.regionalPricing) return;
         
         // Find matching location for the selected region
-        const matchingLocation = instance.locationDetails.find(location => 
+        const matchingLocation = instance.locationDetails.find((location: any) => 
           selectedRegion === location.country || 
           selectedRegion === location.code || 
           selectedRegion.toLowerCase() === location.country.toLowerCase() ||
@@ -1120,7 +1192,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
         
         if (matchingLocation) {
           // Find corresponding regional pricing
-          const regionalPrice = instance.regionalPricing.find(pricing => 
+          const regionalPrice = instance.regionalPricing.find((pricing: any) => 
             pricing.location === matchingLocation.code
           );
           
@@ -1245,7 +1317,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
         const instance = JSON.parse((row as HTMLElement).dataset.instance || '{}');
         
         // Update network info
-        const networkInfo = row.querySelector('[data-network-info="true"]');
+        // const networkInfo = row.querySelector('[data-network-info="true"]');
         const indicator = row.querySelector('.pricing-mode-indicator');
         const description = row.querySelector('.pricing-description');
         
@@ -1288,11 +1360,11 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
                   const maxFormatted = convertAndFormatEURPrice(priceRange.max, true);
                   pricingValue.textContent = `${minFormatted} - ${maxFormatted}`;
                   
-                  if (variationWarning) variationWarning.style.display = '';
+                  if (variationWarning) (variationWarning as HTMLElement).style.display = '';
                 } else {
                   pricingValue.textContent = convertAndFormatEURPrice(option.hourly, true);
                   
-                  if (variationWarning) variationWarning.style.display = 'none';
+                  if (variationWarning) (variationWarning as HTMLElement).style.display = 'none';
                 }
               }
             }
@@ -1308,11 +1380,11 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
                   const maxFormatted = convertAndFormatEURPrice(priceRange.max, false);
                   pricingValue.textContent = `${minFormatted} - ${maxFormatted}`;
                   
-                  if (variationWarning) variationWarning.style.display = '';
+                  if (variationWarning) (variationWarning as HTMLElement).style.display = '';
                 } else {
                   pricingValue.textContent = convertAndFormatEURPrice(option.monthly, false);
                   
-                  if (variationWarning) variationWarning.style.display = 'none';
+                  if (variationWarning) (variationWarning as HTMLElement).style.display = 'none';
                 }
               }
             }
@@ -1332,41 +1404,9 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
     function renderInstances(instances: any[]) {
       if (!tableBody) return;
       
-      // Check if we need to rebuild the table (new instances not in existing rows)
-      const existingRows = Array.from(document.querySelectorAll('.instance-row'));
-      const needsRebuild = instances.some(instance => 
-        !existingRows.find(row => {
-          const rowData = JSON.parse((row as HTMLElement).dataset.instance || '{}');
-          return rowData.instanceType === instance.instanceType && 
-                 rowData.provider === instance.provider;
-        })
-      );
-      
-      if (needsRebuild) {
-        // Rebuild table with new data
-        rebuildTable(instances);
-      } else {
-        // Hide all rows first
-        document.querySelectorAll('.instance-row').forEach(row => {
-          (row as HTMLElement).style.display = 'none';
-        });
-        
-        // Show matching rows in order
-        instances.forEach((instance) => {
-          const matchingRow = Array.from(document.querySelectorAll('.instance-row'))
-            .find(row => {
-              const rowData = JSON.parse((row as HTMLElement).dataset.instance || '{}');
-              return rowData.instanceType === instance.instanceType && 
-                     rowData.provider === instance.provider;
-            });
-          
-          if (matchingRow) {
-            (matchingRow as HTMLElement).style.display = '';
-            // Move to correct position
-            tableBody.appendChild(matchingRow);
-          }
-        });
-      }
+      // For sorting, always rebuild the table to ensure correct order
+      // This is more reliable than trying to match and reorder existing rows
+      rebuildTable(instances);
       
       // Update pricing display after rendering
       updatePricingDisplay();
@@ -1569,7 +1609,7 @@ const formatPriceRange = (priceRange: any, value: number, currency: string = 'US
       
       const headers = table.querySelectorAll('th');
       
-      headers.forEach((header, index) => {
+      headers.forEach((header) => {
         // Add resize handle
         const resizeHandle = document.createElement('div');
         resizeHandle.className = 'resize-handle';

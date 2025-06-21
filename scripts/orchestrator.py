@@ -54,7 +54,7 @@ TIMEOUT_SECONDS = 300  # 5 minutes per provider
 # This allows you to selectively update only specific providers
 PROVIDER_CONFIG = {
     'hetzner': {
-        'enabled': True,  # Set to False to skip fetching and use existing data
+        'enabled': False,  # Set to False to skip fetching and use existing data
         'description': 'Hetzner Cloud and Dedicated Servers'
     },
     'aws': {
@@ -70,7 +70,7 @@ PROVIDER_CONFIG = {
         'description': 'Google Cloud Platform'
     },
     'oci': {
-        'enabled': True,  # Set to False to skip fetching and use existing data
+        'enabled': False,  # Set to False to skip fetching and use existing data
         'description': 'Oracle Cloud Infrastructure'
     },
     'ovh': {
