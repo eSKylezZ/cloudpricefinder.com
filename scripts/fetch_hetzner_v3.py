@@ -949,6 +949,13 @@ class HetznerDedicatedCollector:
             
         cpu_lower = cpu_info.lower()
         
+        # Special handling for specific CPU models first
+        import re
+        
+        # Ampere Altra processors - Q80 means 80 cores regardless of speed variant
+        if 'ampere altra q80' in cpu_lower:
+            return 80
+        
         # Common patterns for core detection
         core_patterns = [
             r'(\d+)\s*cores?',
@@ -957,7 +964,6 @@ class HetznerDedicatedCollector:
             r'(\d+)c\s',
         ]
         
-        import re
         for pattern in core_patterns:
             match = re.search(pattern, cpu_lower)
             if match:
