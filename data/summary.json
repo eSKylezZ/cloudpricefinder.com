@@ -1,7 +1,7 @@
 {
   "totalInstances": 1346,
   "providersCount": 2,
-  "lastUpdated": "2025-09-10T00:14:44.068572",
+  "lastUpdated": "2025-09-14T00:10:32.898907",
   "priceRange": {
     "min": 0.006473,
     "max": 5.1
@@ -21,12 +21,12 @@
     "hetzner": {
       "file": "providers/hetzner.json",
       "count": 1320,
-      "lastUpdated": "2025-09-10T00:14:44.123277"
+      "lastUpdated": "2025-09-14T00:10:32.955322"
     },
     "oci": {
       "file": "providers/oci.json",
       "count": 26,
-      "lastUpdated": "2025-09-10T00:14:44.126894"
+      "lastUpdated": "2025-09-14T00:10:32.958986"
     }
   },
   "dataStructure": {
@@ -35,12 +35,12 @@
       "hetzner": {
         "file": "providers/hetzner.json",
         "count": 1320,
-        "lastUpdated": "2025-09-10T00:14:44.123277"
+        "lastUpdated": "2025-09-14T00:10:32.955322"
       },
       "oci": {
         "file": "providers/oci.json",
         "count": 26,
-        "lastUpdated": "2025-09-10T00:14:44.126894"
+        "lastUpdated": "2025-09-14T00:10:32.958986"
       }
     },
     "description": "Data available in both combined format and individual provider files"
